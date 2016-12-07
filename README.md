@@ -5,7 +5,9 @@ In brief, you can connect one or multiple Blync lights (https://www.embrava.com/
 
 Then, using your favorite CI engine (Jenkins,...), simply call the REST interface for success (green) or failed (red) build.
 
-This code is reusing Blynux (https://github.com/ticapix/blynux) and soem code from Bhijeet Rastogi (http://www.google.com/profiles/abhijeet.1989). Thanks them.
+This code is reusing Blynux (https://github.com/ticapix/blynux) and the tiny HTTP server from Bhijeet Rastogi (http://www.google.com/profiles/abhijeet.1989). Thanks them.
+
+So quite useless but funny, you can't hide your failed build :)
 
 *Disclaimer*: This is some very old code I quickly throw some years ago (2014 ?) and published to github on request of people really using it :)
 
