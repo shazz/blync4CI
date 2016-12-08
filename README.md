@@ -49,7 +49,7 @@ Finally deploy on target
 
 You may now get the status / start / stop the server on target using the following commands:
 ```bash
-> ssh root@Blynker
+> ssh root@<BlynkerDeviceHostName>
 > /etc/init.d/blynuxD status
 > /etc/init.d/blynuxD start
 > /etc/init.d/blynuxD stop
