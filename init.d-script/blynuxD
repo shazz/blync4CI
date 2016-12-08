@@ -1,0 +1,52 @@
+#!/bin/sh /etc/rc.common
+# Example script
+# Copyright (C) 2007 OpenWrt.org
+ 
+# START=10
+# STOP=15
+
+EXTRA_COMMANDS="status"
+ 
+start() {
+	PID=`ps | grep '.*blynux$' | grep -o '^[ ]*[0-9]*'`
+	if [ -n "$PID" ]; then
+		echo "Blynux is already running"
+	else
+		echo starting blynux...
+		/usr/bin/blynux &
+		
+		PID=`ps | grep '.*blynux$' | grep -o '^[ ]*[0-9]*'`
+                if [ -n "$PID" ]; then
+	                echo "Blynux started"
+	        else
+		        echo "Blynux could not be started !"
+		fi
+	fi     
+}                 
+
+stop() {          
+	PID=`ps | grep '.*blynux$' | grep -o '^[ ]*[0-9]*'`
+	if [ -z "$PID" ]; then
+		echo "Blynux is not running"
+	else
+		echo 'Stopping blynux...'
+		wget -qO- 'http://localhost:10000/state/shutdown' > /dev/null 2>&1
+		kill -9 $PID        	
+		
+		PID=`ps | grep '.*blynux$' | grep -o '^[ ]*[0-9]*'`
+		if [ -n "$PID" ]; then
+		        echo "Could not stop Blynux !"
+	        else
+	                echo "Blynux has been stopped"
+	        fi
+	fi
+}
+
+status() {          
+        PID=`ps | grep '.*blynux$' | grep -o '^[ ]*[0-9]*'`
+	if [ -n "$PID" ]; then
+		echo "Blynux is running"
+	else
+		echo "Blynux is not running"
+	fi
+}

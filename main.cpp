@@ -2,6 +2,7 @@
 
 Rest interface for Blync
 Code by Shazz
+Edit by smarie : support for multiple devices and 'cleaner' process mgt + socket release
 Thanks to bhijeet Rastogi (http://www.google.com/profiles/abhijeet.1989) and Ticapix (https://github.com/ticapix/blynux)
 
 */
@@ -13,6 +14,7 @@ Thanks to bhijeet Rastogi (http://www.google.com/profiles/abhijeet.1989) and Tic
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -26,10 +28,11 @@ Thanks to bhijeet Rastogi (http://www.google.com/profiles/abhijeet.1989) and Tic
 /* GLOBALS */
 
 char *ROOT;
-int listenfd, clients[CONNMAX];
+int listenfd, clients[CONNMAX], devnum;
 void startServer(char *);
 void respond(int);
-bool debugEnabled, timeToStop;
+bool debugEnabled;
+static bool *timeToStop;
 
 /* blynux interface */
 int setColorOnDevice(int device_number, int color_mask);
@@ -44,13 +47,16 @@ int main(int argc, char* argv[])
     strcpy(port,DEFAULT_PORT);
 
     int slot=0;
-    debugEnabled = true;
-    timeToStop = false;
+    debugEnabled = false;
+	// shared memory to tell all processes to stop
+    timeToStop = (bool*) mmap(NULL, sizeof *timeToStop, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *timeToStop = false;
+    devnum = 0;
     pid_t serverPid;
     
 
     //Parsing the command line arguments
-    while ((c = getopt (argc, argv, "p:d:")) != -1)
+    while ((c = getopt (argc, argv, "p:d")) != -1)
         switch (c)
         {
             case 'p':
@@ -63,6 +69,9 @@ int main(int argc, char* argv[])
                 debugEnabled=true;
                 printf("Debug enabled\n");
                 break;
+            //case 'n':
+            //    devnum=atoi(optarg);
+            //    break;
             default:
                 exit(1);
         }
@@ -89,7 +98,7 @@ int main(int argc, char* argv[])
         else
         {
 			// only the parent process can spawn children
-			if(getpid() == serverPid)
+			if((*timeToStop==false) && (getpid() == serverPid))
 			{		
 				if(debugEnabled) fprintf(stdout,"[%d] INFO: I'm the parent and I need a child !\n", getpid());			
 				if ( fork() == 0 ) // so I'm in the child process (and I identify myself as pid == 0)
@@ -106,15 +115,16 @@ int main(int argc, char* argv[])
         }
         
 
-        while (clients[slot]!=-1)
+        while ((*timeToStop==false) && (clients[slot]!=-1))
         { 
 			if(debugEnabled) fprintf(stdout,"[%d] INFO: Looking for next available slot available %d on %d.\n", getpid(), slot+1, CONNMAX);
 			slot = (slot+1)%CONNMAX;
 		}  
-		
-        if((timeToStop==true) && (getpid() == serverPid))
+		if(debugEnabled && (*timeToStop==false)) fprintf(stdout,"[%d] INFO: It's NOT time to stop. Server Pid is %d \n", getpid(), serverPid);
+		if(debugEnabled && (*timeToStop==true)) fprintf(stdout,"[%d] INFO: It's time to stop. Server Pid is %d \n", getpid(), serverPid);
+        if((*timeToStop==true) && (getpid() == serverPid))
         {
-			fprintf(stdout,"[%d] NFO: exiting, current parent process : %d\n", getpid(), serverPid);
+			fprintf(stdout,"[%d] INFO: exiting, current parent process : %d\n", getpid(), serverPid);
 			break;
 		}	
 		
@@ -135,6 +145,12 @@ int main(int argc, char* argv[])
 			   
     }
 
+    // close socket
+    if(debugEnabled) printf("[%d] INFO: closing socket\n", getpid());
+    int msg = shutdown(listenfd,2);
+    if(debugEnabled) printf("[%d] INFO: done shutdown, msg %d \n", getpid(), msg);
+    msg = close(listenfd);
+    if(debugEnabled) printf("[%d] INFO: done close, msg %d \n", getpid(), msg);
     return 0;
 }
 
@@ -142,7 +158,9 @@ int main(int argc, char* argv[])
 void stopServer()
 {
 	if(debugEnabled) fprintf(stdout,"[%d] INFO: Stopping server....\n", getpid());
-	timeToStop = true;
+	*timeToStop = true;
+	if(debugEnabled && *timeToStop) fprintf(stdout,"[%d] INFO: It will be time to stop....\n", getpid());
+	if(debugEnabled && !*timeToStop) fprintf(stdout,"[%d] INFO: It wont be time to stop....\n", getpid());
 }
 
 //start server
@@ -164,6 +182,10 @@ void startServer(char *port)
     for (p = res; p!=NULL; p=p->ai_next)
     {
         listenfd = socket (p->ai_family, p->ai_socktype, 0);
+		// allows new sockets to reuse address of closed sockets. 
+		// Useful to be able to restart process without trouble (e.g. using init.d)
+		int reuse = 1;
+		setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
         if (listenfd == -1) continue;
         if (bind(listenfd, p->ai_addr, p->ai_addrlen) == 0) break;
     }
@@ -186,7 +208,7 @@ void startServer(char *port)
 //client connection
 void respond(int n)
 {
-    char mesg[6000], *reqline[3];
+    char mesg[6000], *reqline[4];
     int rcvd;
 
     memset( (void*)mesg, (int)'\0', 6000 );
@@ -216,47 +238,49 @@ void respond(int n)
             else
             {
 				send(clients[n], "HTTP/1.0 200 OK\n\n", 17, 0);
-
-				if(debugEnabled) printf("reqline: %s\n", reqline[1]);                
-				if ( strcmp(reqline[1], "/color/green") == 0 ) 
+				if(debugEnabled) printf("reqline: %s\n", reqline[1]);
+                		//devnum = 0;
+				devnum = (int) strtol(reqline[1]+1, &reqline[3],10);
+				if(debugEnabled) printf("device number: %i\n", devnum);
+				if ( strcmp(reqline[3], "/color/green") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to green\n");			
-					setColorOnDevice(0, 0xd);
+					setColorOnDevice(devnum, 0xd);
 				}
-				else if ( strcmp(reqline[1], "/color/red") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/red") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to red\n");
-					setColorOnDevice(0, 0xe);
+					setColorOnDevice(devnum, 0xe);
 				}
-				else if ( strcmp(reqline[1], "/color/blue") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/blue") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to blue\n");
-					setColorOnDevice(0, 0xb);
+					setColorOnDevice(devnum, 0xb);
 				}
-				else if ( strcmp(reqline[1], "/color/cyan") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/cyan") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to cyan\n");
-					setColorOnDevice(0, 0x9);
+					setColorOnDevice(devnum, 0x9);
 				}
-				else if ( strcmp(reqline[1], "/color/yellow") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/yellow") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to yellow\n");
-					setColorOnDevice(0, 0xc);
+					setColorOnDevice(devnum, 0xc);
 				}
-				else if ( strcmp(reqline[1], "/color/magenta") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/magenta") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to magenta\n");
-					setColorOnDevice(0, 0xa);
+					setColorOnDevice(devnum, 0xa);
 				}				
-				else if ( strcmp(reqline[1], "/color/white") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/white") == 0 ) 
 				{
 					if(debugEnabled) printf("set color to white\n");
-					setColorOnDevice(0, 0x8);
+					setColorOnDevice(devnum, 0x8);
 				}
-				else if ( strcmp(reqline[1], "/color/off") == 0 ) 
+				else if ( strcmp(reqline[3], "/color/off") == 0 ) 
 				{
 					if(debugEnabled) printf("clear color\n");
-					setColorOnDevice(0, 0xf);
+					setColorOnDevice(devnum, 0xf);
 				}	
 				else if ( strcmp(reqline[1], "/state/shutdown") == 0 ) 
 				{
@@ -264,7 +288,7 @@ void respond(int n)
 				}	
 				else
 				{
-					if(debugEnabled) fprintf(stderr,"URI unknown : %s\n", reqline[1]);
+					if(debugEnabled) fprintf(stderr,"URI unknown : %s\n", reqline[3]);
 					write(clients[n], "HTTP/1.0 404 Not Found\n", 23);
 				}			
             }
