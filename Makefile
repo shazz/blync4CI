@@ -22,9 +22,9 @@ SRC_FILES = blynux.cpp main.cpp
 ##############################################################################
 # Where to find course related files
 
-export STAGING_DIR=/home/shazz/Documents/openwrt/openwrt/staging_dir
-PATH	    = $PATH:/home/shazz/Documents/openwrt/openwrt/staging_dir/toolchain-mips_34kc_gcc-4.6-linaro_uClibc-0.9.33.2/bin
-LIB_DIR     = /home/shazz/Documents/openwrt/openwrt/staging_dir/toolchain-mips_34kc_gcc-4.6-linaro_uClibc-0.9.33.2/bin
+export STAGING_DIR=../OpenWrtBuildRoot/openwrt-14-07/staging_dir
+PATH	    = $PATH:../OpenWrtBuildRoot/openwrt-14-07/staging_dir/toolchain-mips_34kc_gcc-4.8-linaro_uClibc-0.9.33.2/bin
+LIB_DIR     = ../OpenWrtBuildRoot/openwrt-14-07/staging_dir/toolchain-mips_34kc_gcc-4.8-linaro_uClibc-0.9.33.2/bin
 INC_DIR     = ./include/libusb-1.0
 
 ##############################################################################
