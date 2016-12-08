@@ -21,7 +21,7 @@ So quite useless but funny, you can't hide your failed build :)
 * runs on port 10000 by default
 * discovers multiple blync lights connected on USB (you may use a Hub) and assigns them a number automatically (<device_id>, starts at 0)
 * light control with HTTP GET commands on URL `http://<host>:10000/<device_id>/color/<chosen_color>`, with `<chosen_color>=<green|red|blue|cyan|yellow|magenta|white|off>`
-* WARNING : server can be shutdown using `http://<host>:10000/state/shutdown`
+* *WARNING* : server can be shutdown using `http://<host>:10000/state/shutdown` (but you cant restart it without logging in to the device, see below)
 
 
 
